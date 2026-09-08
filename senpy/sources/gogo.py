@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 
 from senpy.config import GogoConfig
 from senpy.extractors.embeds import EmbedExtractor
+from senpy.extractors.stream_resolver import StreamResolver
 from senpy.client import parse_episode_number
 from .base import AnimeSearchResult, BaseSource, EpisodeInfo
 
@@ -18,6 +19,7 @@ class GogoSource(BaseSource):
         self.logger = self.config.logger
         self.session = self.config.session
         self.embed_extractor = EmbedExtractor(session=self.session)
+        self.stream_resolver = StreamResolver(session=self.session)
         self.url_ajax: Optional[str] = None
 
     def search(self, query: str) -> List[AnimeSearchResult]:
@@ -120,46 +122,12 @@ class GogoSource(BaseSource):
         return episodes
 
     def get_stream_links(self, episode_url: str) -> Dict[str, str]:
-        """Resolves direct download links with embed fallback for an episode."""
-        start = time.perf_counter()
+        """Resolves direct download links with embed and yt-dlp fallback for an episode."""
         try:
-            resp = self.config.request_with_retry("GET", episode_url, timeout=12)
-            soup = BeautifulSoup(resp.content, "html.parser")
+            return self.stream_resolver.resolve_streams(episode_url=episode_url)
         except Exception as e:
-            self.logger.error(f"Failed to fetch episode page {episode_url}: {e}")
+            self.logger.error(f"Failed to resolve stream links for {episode_url}: {e}")
             return {}
-
-        links: Dict[str, str] = {}
-
-        # 1. Primary extraction: direct download container
-        qualities_container = soup.select(
-            "#wrapper_bg > section > section.content_left > div > div.anime_video_body > div.list_dowload > div > a"
-        )
-        for link in qualities_container:
-            try:
-                redirected = self.session.get(link["href"], allow_redirects=False, timeout=10)
-                quality_raw = link.getText().strip()
-                quality_key = f"{quality_raw.split('x')[1]}p" if "x" in quality_raw else quality_raw
-                loc = redirected.headers.get("location", "").strip()
-                if loc:
-                    links[quality_key] = loc
-            except Exception as e:
-                self.logger.debug(f"Direct download link check failed for {link.getText().strip()}: {e}")
-
-        # 2. Fallback extraction: embed players (Vidstreaming, MegaCloud, etc.)
-        if not links:
-            self.logger.info(f"Direct download links empty for {episode_url}, attempting embed fallback...")
-            embed_urls = self.embed_extractor.extract_embed_urls(resp.text, base_url=self.config.CURRENT_URL)
-            for embed_url in embed_urls:
-                self.logger.info(f"Trying embed source: {embed_url}")
-                embed_streams = self.embed_extractor.resolve_embed_stream(embed_url)
-                if embed_streams:
-                    links.update(embed_streams)
-                    break
-
-        links = {k: v for k, v in links.items() if v}
-        self.logger.info(f"({round(time.perf_counter() - start, 2)}s) Resolved {len(links)} stream links for {episode_url}.")
-        return links
 
     @staticmethod
     def select_best_quality(available_links: Dict[str, str], requested_quality: Union[int, str]) -> str:

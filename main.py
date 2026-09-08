@@ -234,7 +234,12 @@ def download_using_aria2(links: list, anime_dir: str) -> None:
             parts = link.split("&title=")
             if len(parts) > 1:
                 filename = f"{parts[1]}.mp4"
-        items.append(DownloadItem(url=link, download_dir=download_dir, filename=filename))
+        if not filename:
+            match = re.search(r"-episode-([\d\.-]+)", link)
+            if match:
+                ep_num = match.group(1).replace("-", ".")
+                filename = f"EP.{ep_num}.mp4"
+        items.append(DownloadItem(url=link, download_dir=download_dir, filename=filename, referer=client.config.CURRENT_URL))
 
     manager = Aria2RPCManager(
         aria2_bin=str(client.config.aria_2_path),
@@ -365,17 +370,22 @@ def download_anime() -> None:
     download_links = []
     for ep_link in ep_pages_links:
         quality_links = client.get_episode_quality_download_links(ep_link)
-        qualities = [int(q.replace("p", "")) for q in quality_links.keys()] # Get the raw integers of the qualities available for easy comparision
-        if f"{result['quality']}p" in quality_links.keys():
-            download_links.append(quality_links[f"{result['quality']}p"])
-        else:
+        if not quality_links:
+            continue
+        qualities = [int(q.replace("p", "")) for q in quality_links.keys() if q.replace("p", "").isdigit()]
+        target_q = f"{result['quality']}p"
+        if target_q in quality_links:
+            download_links.append(quality_links[target_q])
+        elif qualities:
             try:
-                quality = sorted([q for q in qualities if q > result['quality']])[0] # Get the next quality available
-                client.config.logger.warning(f"{result['quality']}p quality not found, selected {quality}p instead for episode: {ep_link}.")
+                higher = sorted([q for q in qualities if q > result['quality']])
+                selected_q = higher[0] if higher else sorted([q for q in qualities if q < result['quality']])[-1]
+                client.config.logger.warning(f"{result['quality']}p quality not found, selected {selected_q}p instead for episode: {ep_link}.")
+                download_links.append(quality_links[f"{selected_q}p"])
             except Exception:
-                quality = sorted([q for q in qualities if q < result['quality']])[-1] # Get the previous quality available
-                client.config.logger.warning(f"{result['quality']}p quality not found, selected {quality}p instead for episode: {ep_link}.")
-            download_links.append(quality_links[f"{quality}p"])
+                download_links.append(next(iter(quality_links.values())))
+        else:
+            download_links.append(next(iter(quality_links.values())))
 
     download_links = client.utils.fix_episode_download_names(ep_list=download_links)
 

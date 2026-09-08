@@ -1,4 +1,5 @@
 import os
+import re
 import time
 
 class GogoUtils:
@@ -42,10 +43,18 @@ class GogoUtils:
         """
         named_downloads = []
         for link in ep_list:
-            prefix, name = link.split("&title=")
-            name = f"EP.{name.split('-episode-')[1].replace('-', '.')}"
-            named_downloads.append(f"{prefix}&title={name}")
-        
+            match = re.search(r"-episode-([\d\.-]+)", link)
+            if match:
+                ep_num = match.group(1).replace("-", ".")
+                if "&title=" in link:
+                    prefix = link.split("&title=")[0]
+                    named_downloads.append(f"{prefix}&title=EP.{ep_num}")
+                else:
+                    sep = "&" if "?" in link else "?"
+                    named_downloads.append(f"{link}{sep}title=EP.{ep_num}")
+            else:
+                named_downloads.append(link)
+
         return named_downloads
 
     def clear(self) -> None:

@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 
 from .config import GogoConfig
 from .utils import GogoUtils
+from .extractors.stream_resolver import StreamResolver
 
 
 def parse_episode_number(href: str) -> Union[int, float]:
@@ -184,6 +185,8 @@ class GogoClient:
 
     def get_episode_quality_download_links(self, url: str) -> Dict[str, str]:
         """Returns the download links to the various qualities available for the episode.
+        Uses StreamResolver to ensure only verified direct media streams are returned,
+        preventing saving of HTML landing pages or anti-bot interstitials.
 
         Args:
             url (str): The url to episode of the anime.
@@ -193,32 +196,13 @@ class GogoClient:
         """
         start = time.perf_counter()
         try:
-            resp = self.config.request_with_retry("GET", url, timeout=12)
-            soup = BeautifulSoup(resp.content, 'html.parser')
+            resolver = StreamResolver(session=self.session)
+            links = resolver.resolve_streams(episode_url=url)
         except Exception as e:
-            self.config.logger.error(f"Unable to retrieve page for url \"{url}\": {e}")
-            return {}
+            self.config.logger.error(f"Unable to retrieve links for the url \"{url}\": {e}")
+            links = {}
 
-        links: Dict[str, str] = {}
-        qualities_container = soup.select("#wrapper_bg > section > section.content_left > div > div.anime_video_body > div.list_dowload > div > a")
-        if not qualities_container:
-            self.config.logger.error(f"Unable to retrieve links for the url \"{url}\"")
-            return links
-
-        for link in qualities_container:
-            try:
-                redirected = self.session.get(link["href"], allow_redirects=False, timeout=10)
-                quality_raw = link.getText().strip()
-                if "x" in quality_raw:
-                    quality_key = f"{quality_raw.split('x')[1]}p"
-                else:
-                    quality_key = quality_raw
-                loc = redirected.headers.get('location', '').strip()
-                if loc:
-                    links[quality_key] = loc
-            except Exception as e:
-                self.config.logger.error(f"Unable to retrieve link for quality {link.getText().strip()} | {e}")
-
-        links = {k: v for k, v in links.items() if v}  # Filter out empty links
-        self.config.logger.info(f"({round(time.perf_counter() - start, 2)}s) Fetched links for qualities available for episode #{url.split('-')[-1].replace('/', '')}")
+        match = re.search(r"-episode-([\d\.-]+)", url)
+        ep_label = match.group(1) if match else url.split('-')[-1].replace('/', '')
+        self.config.logger.info(f"({round(time.perf_counter() - start, 2)}s) Fetched links for qualities available for episode #{ep_label}")
         return links

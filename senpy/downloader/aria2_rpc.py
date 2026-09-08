@@ -14,6 +14,11 @@ from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, Field
 
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
 
 class DownloadItem(BaseModel):
     """Metadata for an individual download task."""
@@ -22,6 +27,40 @@ class DownloadItem(BaseModel):
     filename: Optional[str] = None
     label: str = Field(default="")
     headers: Optional[List[str]] = None
+    referer: Optional[str] = None
+
+
+def download_hls_stream(item: DownloadItem, logger: Optional[logging.Logger] = None) -> bool:
+    """Downloads an HLS (.m3u8) video stream using yt-dlp and re-assembles it into an MP4 container."""
+    item.download_dir.mkdir(parents=True, exist_ok=True)
+    out_file = item.download_dir / (item.filename or "video.mp4")
+
+    headers_dict: Dict[str, str] = {
+        "User-Agent": DEFAULT_USER_AGENT,
+        "Referer": item.referer or "https://gogoanime.to/",
+    }
+    if item.headers:
+        for h in item.headers:
+            if ": " in h:
+                k, v = h.split(": ", 1)
+                headers_dict[k.strip()] = v.strip()
+
+    ydl_opts = {
+        "outtmpl": str(out_file),
+        "quiet": False,
+        "no_warnings": True,
+        "nocheckcertificate": True,
+        "http_headers": headers_dict,
+    }
+    try:
+        from yt_dlp import YoutubeDL
+        with YoutubeDL(ydl_opts) as ydl:
+            ydl.download([item.url])
+        return out_file.exists() and out_file.stat().st_size > 0
+    except Exception as e:
+        if logger:
+            logger.error(f"HLS download failed for {item.label or item.url}: {e}")
+        return False
 
 
 class Aria2RPCManager:
@@ -151,8 +190,15 @@ class Aria2RPCManager:
         }
         if item.filename:
             options["out"] = item.filename
-        if item.headers:
-            options["header"] = item.headers
+
+        # Always attach resilient User-Agent and Referer headers
+        headers = list(item.headers) if item.headers else []
+        if not any(h.lower().startswith("user-agent:") for h in headers):
+            headers.append(f"User-Agent: {DEFAULT_USER_AGENT}")
+        if not any(h.lower().startswith("referer:") for h in headers):
+            ref = item.referer or "https://gogoanime.to/"
+            headers.append(f"Referer: {ref}")
+        options["header"] = headers
 
         gid = self.call("aria2.addUri", [[item.url], options])
         return str(gid)
@@ -196,11 +242,22 @@ class Aria2RPCManager:
         if not items:
             return True
 
+        # Process any HLS (.m3u8) streams via yt-dlp first
+        hls_items = [it for it in items if ".m3u8" in it.url.lower()]
+        aria_items = [it for it in items if ".m3u8" not in it.url.lower()]
+
+        for hls_item in hls_items:
+            print(f"\n>>> Downloading HLS stream for '{hls_item.label or hls_item.filename}' via yt-dlp...")
+            download_hls_stream(hls_item, logger=self.logger)
+
+        if not aria_items:
+            return True
+
         self.ensure_daemon()
 
         # Setup GID map
         tasks: Dict[str, Dict[str, Any]] = {}
-        for item in items:
+        for item in aria_items:
             gid = self.add_download(item)
             tasks[gid] = {
                 "item": item,

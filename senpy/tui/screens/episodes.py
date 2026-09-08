@@ -133,6 +133,7 @@ class EpisodesScreen(Screen):
                     download_dir=plan.target_video_path.parent,
                     filename=plan.video_filename,
                     label=f"{plan.anime_title} E{plan.ep_num}",
+                    referer=self.app.config.CURRENT_URL,
                 )
             )
 
