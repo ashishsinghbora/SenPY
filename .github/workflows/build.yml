@@ -15,17 +15,17 @@ jobs:
         include:
           - os: ubuntu-latest
             TARGET: linux
-            CMD_BUILD: pyinstaller --noconfirm --console --onefile --name SenPY --icon icon.ico --hidden-import plyer.platforms.linux.notification --hidden-import curl_cffi --collect-all curl_cffi --hidden-import pydantic --hidden-import tenacity --add-data="icon.ico:." main.py
+            CMD_BUILD: pyinstaller --noconfirm --console --onefile --name SenPY --icon icon.ico --hidden-import plyer.platforms.linux.notification --collect-all curl_cffi --collect-all textual --collect-all rich --hidden-import pydantic --hidden-import tenacity --add-data="senpy/tui/style.tcss:senpy/tui" --add-data="icon.ico:." main.py
             OUT_FILE_NAME: SenPY
             ASSET_MIME: application/x-executable
           - os: windows-latest
             TARGET: windows
-            CMD_BUILD: pyinstaller --noconfirm --console --onefile --name SenPY.exe --icon icon.ico --hidden-import plyer.platforms.win.notification --hidden-import curl_cffi --collect-all curl_cffi --hidden-import pydantic --hidden-import tenacity --add-data="icon.ico;." main.py
+            CMD_BUILD: pyinstaller --noconfirm --console --onefile --name SenPY.exe --icon icon.ico --hidden-import plyer.platforms.win.notification --collect-all curl_cffi --collect-all textual --collect-all rich --hidden-import pydantic --hidden-import tenacity --add-data="senpy/tui/style.tcss;senpy/tui" --add-data="icon.ico;." main.py
             OUT_FILE_NAME: SenPY.exe
             ASSET_MIME: application/vnd.microsoft.portable-executable
           - os: macos-latest
             TARGET: macos
-            CMD_BUILD: pyinstaller --noconfirm --console --onefile --name SenPY-mac --icon icon.ico --hidden-import plyer.platforms.macosx.notification --hidden-import curl_cffi --collect-all curl_cffi --hidden-import pydantic --hidden-import tenacity --add-data="icon.ico:." main.py
+            CMD_BUILD: pyinstaller --noconfirm --console --onefile --name SenPY-mac --icon icon.ico --hidden-import plyer.platforms.macosx.notification --collect-all curl_cffi --collect-all textual --collect-all rich --hidden-import pydantic --hidden-import tenacity --add-data="senpy/tui/style.tcss:senpy/tui" --add-data="icon.ico:." main.py
             OUT_FILE_NAME: SenPY-mac
             ASSET_MIME: application/x-mach-binary
 

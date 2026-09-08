@@ -110,16 +110,26 @@ pip install -r requirements.txt
 
 ## Usage
 
-SenPY supports both an interactive visual menu and a headless CLI engine for automation and scriptability.
+SenPY supports a responsive Textual Terminal User Interface (TUI), classic interactive CLI menu, and headless CLI automation.
 
-### 1. Interactive Menu (Default)
+### 1. Modern Textual TUI (Default)
 Simply run the executable or script with no arguments:
 ```console
 python main.py
 ```
-This drops seamlessly into the interactive `InquirerPy` menu.
+Launches a responsive 60 FPS Terminal User Interface built with `textual`:
+* **Search Screen:** Interactive search with live synopsis preview via metadata catalog.
+* **Episode Selection:** Visual episode picker, custom range inputs, and quality resolution.
+* **Downloads Dashboard:** Real-time Aria2 RPC stats, speed gauges, ETA, and pause/resume buttons.
+* **Settings Editor:** Easily view and update downloads directory, credentials, and Aria2 ports.
 
-### 2. Headless CLI Engine
+### 2. Classic Interactive CLI Menu
+If you prefer the original command-line prompt flow or are in a legacy terminal:
+```console
+python main.py --cli
+```
+
+### 3. Headless CLI Engine
 SenPY can be run headlessly for scripts, cron jobs, or batch downloads:
 ```console
 # Download episodes with preferred quality

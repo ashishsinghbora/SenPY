@@ -390,9 +390,20 @@ def download_anime() -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
+    if len(sys.argv) == 1:
+        # Default mode: Modern Textual TUI
+        try:
+            from senpy.tui import run_tui
+            run_tui()
+        except Exception as e:
+            print(f"Failed to start TUI ({e}), falling back to interactive CLI...")
+            home()
+    elif "--cli" in sys.argv:
+        # Explicit classic CLI menu mode
+        home()
+    else:
+        # Headless CLI command mode
         from senpy.cli import run_cli
         sys.exit(run_cli(sys.argv[1:]))
-    else:
-        home() # Start all the oogling-boogling here lol :)
+
 
