@@ -90,35 +90,83 @@ Let's say I downloaded and extracted the aria2 release in `C:\Users\user\Downloa
 |:--:|:--:|
 |  InquirerPy  | Taking all the cool looking inputs |
 |  colorama  |  Beautifying the output text  |
+|  curl_cffi  |  Cloudflare TLS fingerprinting resistance & Chrome impersonation  |
+|  pydantic  |  Configuration & metadata schema validation  |
+|  tenacity  |  Exponential backoff retries for transient HTTP errors  |
 |  plyer  |  Sending notifications on supported devices  |
-|  io  |  Just for StringIO lol  |
-|  subprocess  |  Interacting with aria2 and system shell  |
-|  json  |  Parsing JSON  |
-|  time  |  Sleeping/Calculating time taken for several processes  |
-|  sys  |  Interacting with system buffer/temp directory  |
-|  re  |  Regexing of course  |
-|  os  |  Clearing the console and some other stuffs  |
-|  requests  |  The most important dependency, fetching requests  |
-|  bs4  |  Parsing the html data  |
-|  pathlib  |  Interacting with system paths  |
-|  logging  |  Logging everything using a logger  |
+|  beautifulsoup4  |  Parsing HTML data  |
+|  requests  |  HTTP utility requests  |
 
 |  External Dependency  |  Function  |
 |:--:|:--:|
-|  aria2  |  Downloading the animes  |
+|  aria2  |  High-performance downloads via JSON-RPC daemon  |
 
-Clone the repository, `cd` into the respective directory and run the below command in terminal
+Clone the repository, `cd` into the respective directory and run the below command in terminal:
 ```console
 pip install -r requirements.txt
 ```
-to install all the internal dependencies that doesn't comes inbuilt with python.
 
-Go to [aria2 releases](https://github.com/aria2/aria2/releases) and download the latest release and unpack the archive, and update the path to the aria2 executable in program's `config.json` to install the external dependency.
 <hr>
 
 ## Usage
 
-Refer to the [Installation](#installation) section and complete the installation first. Then just run the program and select the inputs as asked :)
+SenPY supports both an interactive visual menu and a headless CLI engine for automation and scriptability.
+
+### 1. Interactive Menu (Default)
+Simply run the executable or script with no arguments:
+```console
+python main.py
+```
+This drops seamlessly into the interactive `InquirerPy` menu.
+
+### 2. Headless CLI Engine
+SenPY can be run headlessly for scripts, cron jobs, or batch downloads:
+```console
+# Download episodes with preferred quality
+senpy download "Frieren: Beyond Journey's End" -e 1-12 -q 1080p --dir ./Anime -y
+
+# Dry run with Jellyfin/Kodi NFO metadata generation
+senpy download "Death Note" -e 1 -q 720p --dry-run --write-nfo
+
+# Specify custom season and Aria2 RPC port
+senpy download "Attack on Titan" -e 1-25 -q 1080p --season 1 --rpc-port 6800
+```
+
+#### CLI Flags Reference:
+| Flag | Description | Default |
+|---|---|---|
+| `title` | Anime search title or query | *(Required)* |
+| `-e`, `--episodes` | Episodes or range (e.g. `1-12`, `1,3,5`, `12.5`, `all`) | `all` |
+| `-q`, `--quality` | Preferred quality (`1080p`, `720p`, `480p`, `360p`) | `1080p` |
+| `--dir`, `--output-dir` | Output directory destination | Config `DOWNLOADS_DIR` |
+| `-y`, `--yes` | Bypass confirmation prompts | `False` |
+| `--dry-run` | Simulate metadata & path planning without downloading | `False` |
+| `--write-nfo` | Generate Kodi/Jellyfin compatible `.nfo` metadata | `False` |
+| `--season` | Override season number for media server organization | Auto-detected / `1` |
+| `--rpc-port` | Custom Aria2 JSON-RPC daemon port | `6800` |
+
+<hr>
+
+## Media Server Standardizer (Plex / Jellyfin / Kodi)
+
+SenPY automatically queries metadata providers (AniList GraphQL, Kitsu, and Jikan) to organize downloaded media files into standard Plex / Jellyfin / Kodi directory hierarchies:
+
+```text
+{Output_Dir}/
+  └── {Anime_Title}/
+        └── Season {season_num:02d}/
+              ├── {Anime_Title} - S{season_num:02d}E{ep_num:02d} - {Episode_Title}.mp4
+              └── {Anime_Title} - S{season_num:02d}E{ep_num:02d} - {Episode_Title}.nfo  (Optional)
+```
+
+<hr>
+
+## Aria2 JSON-RPC Integration
+
+SenPY communicates with `aria2c` through a local JSON-RPC controller (`http://localhost:6800/jsonrpc`):
+* **Auto Daemon Lifecycle:** If no active Aria2 daemon is running, SenPY spawns an isolated `aria2c` process with session token authentication and terminates it cleanly upon completion.
+* **Safe RPC Dispatch:** Eliminates shell command injection vectors by dispatching URLs and filesystem paths directly through structured JSON-RPC payloads.
+* **Real-Time Progress:** Displays live download speed (MB/s), active connections, and per-task progress tracking with graceful `SIGINT` (Ctrl+C) handling and automatic retry.
 <hr>
 
 ## Versioning

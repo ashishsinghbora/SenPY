@@ -21,22 +21,23 @@ client = GogoClient()
 def header() -> None:
     """Prints the header of the application. Took a long time to style not gonna lie xD"""
     client.utils.clear()
-    print(f"""
+    banner = f"""
     \t\t{Fore.WHITE} _____           {Fore.LIGHTBLUE_EX}________   __
-    \t\t{Fore.WHITE}/  ___|          {Fore.LIGHTBLUE_EX}| ___ \ \ / /
-    \t\t{Fore.WHITE}\ `--. {Fore.GREEN} ___ {Fore.RED}_ __ {Fore.LIGHTBLUE_EX}| |_/ /\ V / 
-    \t\t{Fore.WHITE} `--. \{Fore.GREEN}/ _ \{Fore.RED} '_ \{Fore.YELLOW}|  __/  \ /  
-    \t\t{Fore.WHITE}/\__/ /{Fore.GREEN}  __/{Fore.RED} | | {Fore.YELLOW}| |     | |  
-    \t\t{Fore.WHITE}\____/ {Fore.GREEN}\___|{Fore.RED}_| |_{Fore.YELLOW}\_|     \_/ {Fore.WHITE}v{__version__}  
+    \t\t{Fore.WHITE}/  ___|          {Fore.LIGHTBLUE_EX}| ___ \\ \\ / /
+    \t\t{Fore.WHITE}\\ `--. {Fore.GREEN} ___ {Fore.RED}_ __ {Fore.LIGHTBLUE_EX}| |_/ /\\ V / 
+    \t\t{Fore.WHITE} `--. \\{Fore.GREEN}/ _ \\{Fore.RED} '_ \\{Fore.YELLOW}|  __/  \\ /  
+    \t\t{Fore.WHITE}/\\__/ /{Fore.GREEN}  __/{Fore.RED} | | {Fore.YELLOW}| |     | |  
+    \t\t{Fore.WHITE}\\____/ {Fore.GREEN}\\___|{Fore.RED}_| |_{Fore.YELLOW}\\_|     \\_/ {Fore.WHITE}v{__version__}  
 
 \t      {Fore.GREEN}Developers: {Fore.WHITE}FireHead90544 {Fore.RED}& {Fore.YELLOW}Arctic4161
 {Fore.YELLOW} _____________________________________________________________                             
 {Fore.BLUE} _____  ___  _____   {Fore.CYAN}___ _____ _ __  __   ___________ ________ 
-{Fore.BLUE} |__||\ |||\/||___   {Fore.CYAN}|  \|  || | ||\ ||   |  ||__||  \|___|__/ 
-{Fore.BLUE} |  || \|||  ||___   {Fore.CYAN}|__/|__||_|_|| \||___|__||  ||__/|___|  \ 
+{Fore.BLUE} |__|\\ |||\\/||___   {Fore.CYAN}|  \\|  || | ||\\ ||   |  ||__||  \\|___|__/ 
+{Fore.BLUE} |  || \\|||  ||___   {Fore.CYAN}|__/|__||_|_|| \\||___|__||  ||__/|___|  \\ 
 {Fore.YELLOW} _____________________________________________________________
                                                                 
-    """)
+    """
+    print(banner)
 
 
 def home():
@@ -216,25 +217,37 @@ def do_pre_checks() -> None:
 
 
 def download_using_aria2(links: list, anime_dir: str) -> None:
-    """Downloads the episodes using external downloader aria2
-    Since the default python downloader (using requests) is tooooo slow as compared to aria2
-    and would require me to use my brain tooo much and handle several validations
-    because some of you will surely try to break the program.
-    Aria2 is wickedly fast and easy to use, read more about it on its docs.
-    Communicates with aria2 using subprocess PIPE :)
+    """Downloads the episodes using external downloader aria2 JSON-RPC daemon.
+    Uses structured RPC dispatch without shell command injection and tracks live progress.
 
     Args:
         links (list): The list of links of episodes to download.
     """
     start = time.perf_counter()
     download_dir = client.config.downloads_dir / anime_dir
-    cmd = [str(client.config.aria_2_path.resolve()), f"--max-concurrent-downloads={client.config.max_concurrent_downloads}", "-d", str(download_dir.resolve()), "-Z"]
-    cmd = subprocess.list2cmdline(cmd)
-    cmd += " \"" + "\" \"".join(links) + "\""
-    p = subprocess.Popen(cmd, shell=True, bufsize=1, universal_newlines=True, stdout=subprocess.PIPE)
-    for line in p.stdout:
-        print(line.rstrip(), end="\r")
-    p.wait()
+    from senpy.downloader.aria2_rpc import Aria2RPCManager, DownloadItem
+
+    items: list[DownloadItem] = []
+    for link in links:
+        filename = None
+        if "&title=" in link:
+            parts = link.split("&title=")
+            if len(parts) > 1:
+                filename = f"{parts[1]}.mp4"
+        items.append(DownloadItem(url=link, download_dir=download_dir, filename=filename))
+
+    manager = Aria2RPCManager(
+        aria2_bin=str(client.config.aria_2_path),
+        port=client.config.config_model.ARIA_RPC_PORT,
+        secret=client.config.config_model.ARIA_RPC_SECRET,
+        max_concurrent=client.config.max_concurrent_downloads,
+        logger=client.config.logger,
+    )
+    try:
+        manager.download_with_progress(items)
+    finally:
+        manager.shutdown()
+
     total_time = client.utils.convert_seconds_to_time(round(time.perf_counter() - start))
     header()
     client.config.logger.info(f"Downloaded {len(links)} episodes to \"{download_dir.resolve()}\" in {total_time}")
@@ -377,4 +390,9 @@ def download_anime() -> None:
 
 
 if __name__ == "__main__":
-    home() # Start all the oogling-boogling here lol :)
+    if len(sys.argv) > 1:
+        from senpy.cli import run_cli
+        sys.exit(run_cli(sys.argv[1:]))
+    else:
+        home() # Start all the oogling-boogling here lol :)
+
