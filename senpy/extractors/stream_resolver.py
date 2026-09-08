@@ -131,6 +131,20 @@ def extract_from_download_portal(html: str, base_url: str = "") -> Dict[str, str
     return found
 
 
+def extract_video_url(embed_or_download_url: str, session: Optional[Any] = None) -> Optional[str]:
+    """Resolves a direct media stream URL from a download or embed URL using
+    direct Content-Type inspection and programmatic yt-dlp fallback."""
+    if is_direct_media_url(embed_or_download_url, session=session):
+        return embed_or_download_url
+    streams = extract_streams_with_ytdlp(embed_or_download_url)
+    if streams:
+        for q in ["1080p", "720p", "480p", "360p", "default", "auto"]:
+            if q in streams:
+                return streams[q]
+        return next(iter(streams.values()))
+    return None
+
+
 class StreamResolver:
     """Unified video stream resolver combining direct scraping, download portal inspection,
     yt-dlp extraction, and embed player fallbacks."""

@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 
 from .config import GogoConfig
 from .utils import GogoUtils
-from .extractors.stream_resolver import StreamResolver
+from .extractors.stream_resolver import StreamResolver, extract_video_url
 
 
 def parse_episode_number(href: str) -> Union[int, float]:
@@ -70,6 +70,23 @@ class GogoClient:
                     })
             except Exception as e:
                 self.config.logger.error(f"An error occurred while parsing search result | {e}")
+
+        if not anime_list:
+            try:
+                from .metadata.resolver import MetadataResolver
+                resolver = MetadataResolver(session=self.session)
+                meta = resolver.resolve_metadata(query)
+                if meta and meta.title:
+                    name = meta.english_title or meta.title
+                    safe_slug = re.sub(r"[^a-zA-Z0-9]+", "-", name.lower()).strip("-")
+                    anime_list.append({
+                        "name": name,
+                        "id": safe_slug,
+                        "released": str(meta.year or "Unknown"),
+                        "image": "",
+                    })
+            except Exception as e:
+                self.config.logger.debug(f"Search fallback failed: {e}")
 
         self.config.logger.info(f"({round(time.perf_counter() - start, 2)}s) Fetched animes with query: \"{query}\", Found \"{len(anime_list)}\" results.")
         return anime_list

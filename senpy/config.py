@@ -36,7 +36,8 @@ class GogoConfig:
         self.setup_logger()
         self.cookie_path = Path.home() / ".senpy" / "cookies.json"
         self.config_path = self.get_config_path()
-        self.loaded_config: Dict[str, Any] = json.load(open(self.config_path))
+        with open(self.config_path, encoding="utf-8") as f:
+            self.loaded_config: Dict[str, Any] = json.load(f)
         self.config_model = SenpyConfig.model_validate(self.loaded_config)
 
         self.email: str = self.config_model.EMAIL

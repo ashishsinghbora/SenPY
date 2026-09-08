@@ -1,6 +1,7 @@
+from .main_screen import MainScreen
+from .settings import SettingsModal, SettingsScreen
 from .search import SearchScreen
 from .episodes import EpisodesScreen
 from .downloads import DownloadsScreen
-from .settings import SettingsScreen
 
-__all__ = ["SearchScreen", "EpisodesScreen", "DownloadsScreen", "SettingsScreen"]
+__all__ = ["MainScreen", "SettingsModal", "SettingsScreen", "SearchScreen", "EpisodesScreen", "DownloadsScreen"]

@@ -67,6 +67,27 @@ class GogoSource(BaseSource):
             except Exception as e:
                 self.logger.error(f"Error parsing anime search result item: {e}")
 
+        if not results:
+            try:
+                from senpy.metadata.resolver import MetadataResolver
+                resolver = MetadataResolver(session=self.session)
+                meta = resolver.resolve_metadata(query)
+                if meta and meta.title:
+                    name = meta.english_title or meta.title
+                    safe_slug = re.sub(r"[^a-zA-Z0-9]+", "-", name.lower()).strip("-")
+                    results.append(
+                        AnimeSearchResult(
+                            id=safe_slug,
+                            name=name,
+                            released=str(meta.year or "Unknown"),
+                            image="",
+                            url=f"{self.config.CURRENT_URL}/category/{safe_slug}",
+                            source="gogo",
+                        )
+                    )
+            except Exception as e:
+                self.logger.debug(f"Catalog search fallback failed: {e}")
+
         self.logger.info(f"({round(time.perf_counter() - start, 2)}s) Searched '{query}', found {len(results)} results.")
         return results
 

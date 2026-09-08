@@ -6,7 +6,7 @@ from .utils import GogoUtils
 from .client import GogoClient
 from .errors import *
 from .sources import BaseSource, GogoSource, AnimeSearchResult, EpisodeInfo
-from .extractors import M3U8Parser, EmbedExtractor
-from .tui import SenpyApp, run_tui
+from .extractors import M3U8Parser, EmbedExtractor, StreamResolver, extract_video_url
+from .tui import SenPyApp, SenpyApp, run_tui
 
 
