@@ -1,7 +1,25 @@
+import re
+import time
+from typing import Any, Dict, List, Optional, Union
+from bs4 import BeautifulSoup
+
 from .config import GogoConfig
 from .utils import GogoUtils
-from bs4 import BeautifulSoup
-import time
+
+
+def parse_episode_number(href: str) -> Union[int, float]:
+    """Extracts episode index safely from a link without dynamic code evaluation.
+    Handles formats like:
+      - '-episode-1' -> 1
+      - '-episode-12.5' -> 12.5
+      - '-episode-12-5' -> 12.5
+    """
+    match = re.search(r"-episode-([\d\.\-]+)", href)
+    if not match:
+        raise ValueError(f"Unable to parse episode number from: {href}")
+    num_str = match.group(1).replace("-", ".").rstrip(".")
+    val = float(num_str)
+    return int(val) if val.is_integer() else val
 
 
 class GogoClient:
@@ -11,12 +29,12 @@ class GogoClient:
     about doing stuffs manually.
     """
     def __init__(self) -> None:
-        self.url_ajax = None
+        self.url_ajax: Optional[str] = None
         self.config = GogoConfig()
         self.utils = GogoUtils()
         self.session = self.config.session
 
-    def anime_search(self, query: str) -> list:
+    def anime_search(self, query: str) -> List[Dict[str, Any]]:
         """Searches for anime with given query.
 
         Args:
@@ -27,23 +45,35 @@ class GogoClient:
         """
         start = time.perf_counter()
         search_url = f"{self.config.CURRENT_URL}/search.html?keyword={query}"
-        soup = BeautifulSoup(self.session.get(search_url).content, 'html.parser')
+        try:
+            resp = self.config.request_with_retry("GET", search_url, timeout=12)
+            soup = BeautifulSoup(resp.content, 'html.parser')
+        except Exception as e:
+            self.config.logger.error(f"Failed to fetch search results for query '{query}': {e}")
+            return []
+
         animes = soup.select("#wrapper_bg > section > section.content_left > div > div.last_episodes > ul > li")
-        anime_list = []
+        anime_list: List[Dict[str, Any]] = []
         for anime in animes:
             try:
-                anime_list.append({"name": anime.find("p", {"class": "name"}).a.getText().strip(), 
-                    "id": anime.find("p", {"class": "name"}).a["href"].strip().split("/")[-1].replace("/", ""), 
-                    "released": anime.find("p", {"class": "released"}).getText().strip().split("Released:")[1].strip(), 
-                    "image": anime.div.a.img["src"]
-                })
+                name_elem = anime.find("p", {"class": "name"})
+                released_elem = anime.find("p", {"class": "released"})
+                img_elem = anime.div.a.img if anime.div and anime.div.a and anime.div.a.img else None
+
+                if name_elem and name_elem.a:
+                    anime_list.append({
+                        "name": name_elem.a.getText().strip(),
+                        "id": name_elem.a["href"].strip().split("/")[-1].replace("/", ""),
+                        "released": released_elem.getText().strip().split("Released:")[1].strip() if released_elem else "Unknown",
+                        "image": img_elem["src"] if img_elem and "src" in img_elem.attrs else ""
+                    })
             except Exception as e:
-                self.config.logger.error(f"An error occured while searching for animes | {e}")
+                self.config.logger.error(f"An error occurred while parsing search result | {e}")
 
         self.config.logger.info(f"({round(time.perf_counter() - start, 2)}s) Fetched animes with query: \"{query}\", Found \"{len(anime_list)}\" results.")
         return anime_list
 
-    def get_all_episode_numbers(self, animeid: str) -> list:
+    def get_all_episode_numbers(self, animeid: str) -> List[Union[int, float]]:
         """Returns all the episodes of the anime (including bonus episodes like 17.5, 13.5, etc.).
 
         Args:
@@ -53,20 +83,52 @@ class GogoClient:
             eps (list): The list of all available episodes of the anime.
         """
         start = time.perf_counter()
-        soup = BeautifulSoup(self.session.get(f"{self.config.CURRENT_URL}/category/{animeid}").content, 'html.parser')
-        # Arigato Zai-Kun (https://github.com/FireHead90544/SenPY/issues/10#issue-1955506329)
-        anime_id = soup.find("input", {"id": "movie_id"})['value']
-        last = int(list(soup.select("#episode_page")[0])[-2].a['ep_end'])
-        url = soup.find("meta", property="og:image")
-        self.url_ajax = url["content"].split("/")[2]
-        soup = BeautifulSoup(self.session.get(f"https://ajax.{self.url_ajax}/ajax/load-list-episode?ep_start=0&ep_end={last}&id={anime_id}").content, 'html.parser')
-        all_eps = [eval(ep['href'].strip().split("-episode-")[1].replace("-", ".")) for ep in soup.select("ul#episode_related > li > a")]
-        all_eps.sort()
+        try:
+            resp = self.config.request_with_retry("GET", f"{self.config.CURRENT_URL}/category/{animeid}", timeout=12)
+            soup = BeautifulSoup(resp.content, 'html.parser')
+        except Exception as e:
+            self.config.logger.error(f"Failed to fetch category page for {animeid}: {e}")
+            return []
 
+        movie_id_elem = soup.find("input", {"id": "movie_id"})
+        if not movie_id_elem or "value" not in movie_id_elem.attrs:
+            self.config.logger.warning(f"Could not locate movie_id for anime {animeid}")
+            return []
+        anime_id = movie_id_elem['value']
+
+        ep_pages = soup.select("#episode_page")
+        if not ep_pages:
+            return []
+        last_item = list(ep_pages[0])[-2]
+        last = int(last_item.a['ep_end'])
+
+        url_meta = soup.find("meta", property="og:image")
+        if url_meta and "content" in url_meta.attrs:
+            self.url_ajax = url_meta["content"].split("/")[2]
+        else:
+            self.url_ajax = "gogoanime.to"
+
+        try:
+            ajax_url = f"https://ajax.{self.url_ajax}/ajax/load-list-episode?ep_start=0&ep_end={last}&id={anime_id}"
+            ajax_resp = self.config.request_with_retry("GET", ajax_url, timeout=12)
+            ajax_soup = BeautifulSoup(ajax_resp.content, 'html.parser')
+        except Exception as e:
+            self.config.logger.error(f"Failed to load episode list via ajax for {animeid}: {e}")
+            return []
+
+        all_eps: List[Union[int, float]] = []
+        for ep in ajax_soup.select("ul#episode_related > li > a"):
+            href = ep.get('href', '').strip()
+            try:
+                all_eps.append(parse_episode_number(href))
+            except ValueError:
+                continue
+
+        all_eps.sort()
         self.config.logger.info(f"({round(time.perf_counter() - start, 2)}s) Fetched all episodes for anime id: \"{animeid}\"")
         return all_eps
 
-    def get_episode_pages_links(self, animeid: str, eps: list) -> list:
+    def get_episode_pages_links(self, animeid: str, eps: List[Union[int, float]]) -> List[str]:
         """Returns the list to the episode pages of anime with given id.
 
         Args:
@@ -77,15 +139,50 @@ class GogoClient:
             links (list): The list containing links to the episode pages of anime.
         """
         start = time.perf_counter()
-        soup = BeautifulSoup(self.session.get(f"{self.config.CURRENT_URL}/category/{animeid}").content, 'html.parser')
-        anime_id = soup.find("input", {"id": "movie_id"})['value']
-        soup = BeautifulSoup(self.session.get(f"https://ajax.{self.url_ajax}/ajax/load-list-episode?ep_start={min(eps)}&ep_end={max(eps)}&id={anime_id}").content, 'html.parser')
-        links = [f"{self.config.CURRENT_URL}{ep['href'].strip()}" for ep in soup.select("ul#episode_related > li > a") if eval(ep['href'].split('-episode-')[1].replace('-', '.')) in eps][::-1]
+        try:
+            resp = self.config.request_with_retry("GET", f"{self.config.CURRENT_URL}/category/{animeid}", timeout=12)
+            soup = BeautifulSoup(resp.content, 'html.parser')
+        except Exception as e:
+            self.config.logger.error(f"Failed to fetch category page for {animeid}: {e}")
+            return []
 
+        movie_id_elem = soup.find("input", {"id": "movie_id"})
+        if not movie_id_elem or "value" not in movie_id_elem.attrs:
+            return []
+        anime_id = movie_id_elem['value']
+
+        if not self.url_ajax:
+            url_meta = soup.find("meta", property="og:image")
+            if url_meta and "content" in url_meta.attrs:
+                self.url_ajax = url_meta["content"].split("/")[2]
+            else:
+                self.url_ajax = "gogoanime.to"
+
+        ep_start = int(min(eps)) if eps else 0
+        ep_end = int(max(eps)) if eps else 0
+        try:
+            ajax_url = f"https://ajax.{self.url_ajax}/ajax/load-list-episode?ep_start={ep_start}&ep_end={ep_end}&id={anime_id}"
+            ajax_resp = self.config.request_with_retry("GET", ajax_url, timeout=12)
+            ajax_soup = BeautifulSoup(ajax_resp.content, 'html.parser')
+        except Exception as e:
+            self.config.logger.error(f"Failed to load episode links via ajax for {animeid}: {e}")
+            return []
+
+        links: List[str] = []
+        for ep in ajax_soup.select("ul#episode_related > li > a"):
+            href = ep.get('href', '').strip()
+            try:
+                num = parse_episode_number(href)
+                if num in eps:
+                    links.append(f"{self.config.CURRENT_URL}{href}")
+            except ValueError:
+                continue
+
+        links = links[::-1]
         self.config.logger.info(f"({round(time.perf_counter() - start, 2)}s) Fetched episodes' links for anime id: \"{animeid}\"")
         return links
 
-    def get_episode_quality_download_links(self, url: str) -> dict:
+    def get_episode_quality_download_links(self, url: str) -> Dict[str, str]:
         """Returns the download links to the various qualities available for the episode.
 
         Args:
@@ -95,8 +192,14 @@ class GogoClient:
             links (dict): Dictionary containing quality:link pairs.
         """
         start = time.perf_counter()
-        soup = BeautifulSoup(self.session.get(url).content, 'html.parser')
-        links = {}
+        try:
+            resp = self.config.request_with_retry("GET", url, timeout=12)
+            soup = BeautifulSoup(resp.content, 'html.parser')
+        except Exception as e:
+            self.config.logger.error(f"Unable to retrieve page for url \"{url}\": {e}")
+            return {}
+
+        links: Dict[str, str] = {}
         qualities_container = soup.select("#wrapper_bg > section > section.content_left > div > div.anime_video_body > div.list_dowload > div > a")
         if not qualities_container:
             self.config.logger.error(f"Unable to retrieve links for the url \"{url}\"")
@@ -104,11 +207,18 @@ class GogoClient:
 
         for link in qualities_container:
             try:
-                redirected = self.session.get(link["href"], allow_redirects=False)
-                links[f"{link.getText().strip().split('x')[1]}p"] = redirected.headers['location'].strip()
-            except KeyError as e:
-                self.config.logger.error(f"Unable to retrieve link for {link.getText().strip().split('x')[1]}p quality for this episode")
-        links = {k: v for k, v in links.items() if v} # Filter out empty links
+                redirected = self.session.get(link["href"], allow_redirects=False, timeout=10)
+                quality_raw = link.getText().strip()
+                if "x" in quality_raw:
+                    quality_key = f"{quality_raw.split('x')[1]}p"
+                else:
+                    quality_key = quality_raw
+                loc = redirected.headers.get('location', '').strip()
+                if loc:
+                    links[quality_key] = loc
+            except Exception as e:
+                self.config.logger.error(f"Unable to retrieve link for quality {link.getText().strip()} | {e}")
 
+        links = {k: v for k, v in links.items() if v}  # Filter out empty links
         self.config.logger.info(f"({round(time.perf_counter() - start, 2)}s) Fetched links for qualities available for episode #{url.split('-')[-1].replace('/', '')}")
         return links

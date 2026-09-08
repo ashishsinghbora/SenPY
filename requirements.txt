@@ -1,6 +1,9 @@
-InquirerPy
-pyinstaller
-colorama
-requests
-plyer
-bs4
+InquirerPy>=0.3.4
+pyinstaller>=6.0.0
+colorama>=0.4.6
+requests>=2.31.0
+curl_cffi>=0.7.0
+pydantic>=2.0.0
+tenacity>=8.2.0
+plyer>=2.1.0
+beautifulsoup4>=4.12.0
